@@ -213,13 +213,13 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="manifest" href="./manifest.json?v=v1783631338492">
-    <meta name="theme-color" content="#9d73bf">
-    <link rel="apple-touch-icon" href="./icon-192.png?v=v1783631338492">
+    <link rel="manifest" href="./manifest.json?v=v1783635396601">
+    <meta name="theme-color" content="#9d86ac">
+    <link rel="apple-touch-icon" href="./icon-192.png?v=v1783635396601">
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=v1783631338492')
+          navigator.serviceWorker.register('./sw.js?v=v1783635396601')
             .then(reg => console.log('SW Registered'))
             .catch(err => console.log('SW Failed', err));
         });
@@ -1606,12 +1606,12 @@
             let statusBadge = document.getElementById("stream-status");
             if(statusBadge) statusBadge.innerText = "🟢 يعمل الآن: " + ch.name;
 
-            // تحديث التمييز مع الـ Auto-scroll
+            // تحديث التمييز بدون اهتزاز أو تحريك الشريط
             document.querySelectorAll('.aplr-link').forEach(el => el.classList.remove('playing-item'));
             let activeBtn = document.querySelector(`.aplr-link[data-channel-idx="${index}"]`);
             if (activeBtn) {
                 activeBtn.classList.add('playing-item');
-                activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                // تم إيقاف سطر الـ scrollIntoView عشان الشريط ميتحركش والقناة تنور بس
             }
         };
 
