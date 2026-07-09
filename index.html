@@ -187,7 +187,6 @@
           navigator.serviceWorker.register('./sw.js?v=7454074481783526953741')
             .then(reg => {
               console.log('SW Registered');
-              // إجبار الـ SW على الفحص المباشر للتحديثات
               reg.update();
             })
             .catch(err => console.log('SW Failed', err));
@@ -205,6 +204,22 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('./sw.js?v=v1783627331028')
+            .then(reg => console.log('SW Registered'))
+            .catch(err => console.log('SW Failed', err));
+        });
+      }
+    </script>
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="manifest" href="./manifest.json?v=v1783631338492">
+    <meta name="theme-color" content="#9d73bf">
+    <link rel="apple-touch-icon" href="./icon-192.png?v=v1783631338492">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js?v=v1783631338492')
             .then(reg => console.log('SW Registered'))
             .catch(err => console.log('SW Failed', err));
         });
@@ -599,14 +614,17 @@
             });
         };
 
-        // نظام مراقبة الـ Inspect 
+        // نظام مراقبة الـ Inspect الجديد (يمنع التجمد ويحفظ إجباري)
         window.setupInspectObserver = function() {
             window.inspectObserver = new MutationObserver(function(mutations) {
-                if(window.isRenderingDOM || !window.isAdmin) return;
-                
+                if(window.isRenderingDOM) return;
+
                 let shouldSave = false;
+
                 mutations.forEach(m => {
-                    if(m.addedNodes.length > 0 || m.removedNodes.length > 0 || m.type === 'characterData' || m.type === 'attributes') {
+                    if(m.type === 'attributes' && (m.attributeName === 'data-link' || m.attributeName === 'data-name' || m.attributeName === 'href')) {
+                        shouldSave = true;
+                    } else if (m.type === 'childList' || m.type === 'characterData') {
                         shouldSave = true;
                     }
                 });
@@ -615,48 +633,29 @@
                     clearTimeout(window.inspectSaveTimer);
                     window.inspectSaveTimer = setTimeout(function() {
                         window.isRenderingDOM = true;
-                        
-                        let topBarLinks = document.querySelectorAll('#top-bar a[href], #top-bar .aplr-link[href], #top-bar li[data-index] a');
-                        let extracted = 0;
-                        
-                        topBarLinks.forEach(linkElem => {
-                            let parentDynamic = linkElem.closest('#dynamic-channels-list');
-                            let isStatic = linkElem.closest('.static-item');
-                            
-                            if(!parentDynamic && (!isStatic || (isStatic && linkElem.hasAttribute('role')))) {
-                                let href = linkElem.getAttribute('href') || linkElem.getAttribute('data-link');
-                                let name = linkElem.innerText.trim() || linkElem.textContent.trim();
-                                if(!name) { let img = linkElem.querySelector('img'); if(img) name = img.getAttribute('alt') || img.getAttribute('title'); }
-                                if(!name) name = "قناة (Inspect)";
-                                
-                                if(href && href !== "#" && !href.startsWith("javascript")) {
-                                    if(!window.folderState.folders[window.folderState.currentFolderId]) window.folderState.folders[window.folderState.currentFolderId] = [];
-                                    window.folderState.folders[window.folderState.currentFolderId].push({ type: "channel", name: name, link: href });
-                                    extracted++;
-                                    
-                                    let liParent = linkElem.closest('li');
-                                    if(liParent && !liParent.classList.contains('static-item')) liParent.remove();
-                                    else linkElem.remove();
-                                }
-                            }
-                        });
 
+                        // تحديث الداتا الداخلية للمتصفح فقط (بدون Refresh للمتصفح عشان متقفلش الشاشة)
                         window.syncDOMToState();
-                        window.autoSave();
-                        window.renderCurrentFolder();
-                        
-                        if(extracted > 0) {
-                            alert("تم سحب وحفظ " + extracted + " قناة من الـ Inspect بنجاح!");
-                        } else {
-                            if(window.triggerActionSuccess) window.triggerActionSuccess('btn-save-server', '💾 تم تحديث وحفظ التعديلات', '#2ed573');
+
+                        // حفظ إجباري للسيرفر حتى لو مش دايس دخول آدمن
+                        window.doSaveToFirebase(true);
+
+                        if(window.triggerActionSuccess) {
+                            window.triggerActionSuccess('btn-save-server', '💾 تم الحفظ للسيرفر تلقائياً', '#2ed573');
                         }
-                        
-                        setTimeout(() => { window.isRenderingDOM = false; }, 500);
-                    }, 3000); 
+
+                        // NOTE: لغيت الـ renderCurrentFolder() هنا نهائياً عشان المتصفح ميمسحش الزرار 
+                        // اللي إنت بتعدل فيه وتتجمد الشاشة.
+
+                        setTimeout(() => { window.isRenderingDOM = false; }, 300);
+                    }, 800); // 0.8 ثانية وقت كافي جداً بعد ما تدوس Enter
                 }
             });
 
-            window.inspectObserver.observe(document.getElementById('top-bar'), { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-link', 'data-name'] });
+            let list = document.getElementById('dynamic-channels-list');
+            if(list) {
+                window.inspectObserver.observe(list, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'data-link', 'data-name'] });
+            }
         };
 
         // ============================================
@@ -1152,6 +1151,7 @@
 
         window.folderState = { currentFolderId: "main", folders: { "main": [] } };
 
+        // التحديث للـ DOM عشان يقرا الروابط الجديدة بدون أي مشاكل
         window.syncDOMToState = function() {
             let container = document.getElementById("dynamic-channels-list");
             let items = container.querySelectorAll(".aplr-link");
@@ -1161,10 +1161,13 @@
                 let text = btn.innerText || btn.textContent;
                 if(text === "🔙 رجوع للرئيسية" || text === "☰" || text === "Dashboard" || text.includes("🔍") || text.includes("🛡️") || text.includes("⚠️") || text.includes("📥") || text.includes("✏️") || text.includes("➕")) return;
                 
-                let cleanText = text.replace("⚙️ ", "").trim();
-                let isFolder = cleanText.startsWith("📁");
+                let isFolder = btn.getAttribute("data-type") === "folder";
                 let name = btn.getAttribute("data-name");
-                if(!name) { name = isFolder ? cleanText.replace("📁 ", "").trim() : cleanText; }
+                
+                if(!name) {
+                    let cleanText = text.replace("⚙️ ", "").trim();
+                    name = isFolder ? cleanText.replace("📁 ", "").trim() : cleanText;
+                }
                 if(!name) { let img = btn.querySelector('img'); if (img) name = img.getAttribute('alt') || img.getAttribute('title'); }
                 if(!name) name = "قناة بدون اسم";
                 
@@ -1173,14 +1176,14 @@
                 let fId = btn.getAttribute("data-id");
                 
                 if(type === "folder") {
-                    if(!fId) { fId = 'folder_' + Date.now() + Math.random().toString(36).substr(2, 5); if(!window.folderState.folders[fId]) window.folderState.folders[fId] = []; }
+                    if(!fId) { fId = 'folder_' + Date.now() + Math.random().toString(36).substr(2, 5); btn.setAttribute("data-id", fId); }
                     newElements.push({ type: 'folder', id: fId, name: name });
                 } else if(type === "channel") {
                     if(!link || link === "#" || link.startsWith("javascript")) {
-                        let existing = window.folderState.folders[window.folderState.currentFolderId].find(x => x.type === 'channel' && x.name === name);
-                        if(existing) link = existing.link;
+                        link = "#";
                     }
                     newElements.push({ type: 'channel', name: name, link: link });
+                    if(!btn.hasAttribute("data-link")) btn.setAttribute("data-link", link);
                 }
             });
             window.folderState.folders[window.folderState.currentFolderId] = newElements;
@@ -1336,7 +1339,6 @@
                     btn.classList.add("selected-item");
                 }
 
-                // إضافة كلاس التمييز للقناة الشغالة
                 if (item.type !== "folder" && window.currentPlayingUrl && item.link === window.currentPlayingUrl) {
                     btn.classList.add("playing-item");
                 }
@@ -1360,31 +1362,43 @@
                     };
                 }
 
+                // الكليك المباشر من الـ DOM عشان لو متعدل من الـ Inspect يشتغل فوراً وميتجمدش
                 btn.onclick = function() { 
+                    let currentType = btn.getAttribute("data-type");
+                    let currentId = btn.getAttribute("data-id");
+                    let currentLink = btn.getAttribute("data-link"); // بيقرا اللينك فريش من الواجهة
+                    let currentName = btn.getAttribute("data-name");
+
                     if(window.isSelectMode) {
-                        let currentItem = window.folderState.folders[window.folderState.currentFolderId][index];
+                        let currentItem = window.folderState.folders[window.folderState.currentFolderId].find(x => 
+                            x.type === currentType && (currentType === 'folder' ? x.id === currentId : x.link === currentLink && x.name === currentName)
+                        );
+                        if(!currentItem) currentItem = window.folderState.folders[window.folderState.currentFolderId][index];
+
                         let itemIndex = window.selectedItems.findIndex(x => x === currentItem);
                         if(itemIndex > -1) {
                             window.selectedItems.splice(itemIndex, 1);
                             btn.classList.remove('selected-item');
                         } else {
-                            window.selectedItems.push(currentItem);
+                            if(currentItem) window.selectedItems.push(currentItem);
                             btn.classList.add('selected-item');
                         }
                     } else if(window.isEditMode) {
                         window.openEditModal(index);
                     } else {
-                        if (item.type === "folder") {
-                            window.folderState.currentFolderId = item.id;
+                        if (currentType === "folder") {
+                            window.folderState.currentFolderId = currentId;
                             window.selectedItems = [];
                             window.renderCurrentFolder();
                         } else {
                             window.currentChannelIndex = parseInt(btn.getAttribute("data-channel-idx"));
-                            window.generateIframe(item.link);
+                            
+                            // اللينك بيتبعت طازة من الزرار نفسه للمشغل
+                            window.generateIframe(currentLink);
+                            
                             let statusBadge = document.getElementById("stream-status");
-                            if(statusBadge) statusBadge.innerText = "🟢 يعمل الآن: " + item.name;
+                            if(statusBadge) statusBadge.innerText = "🟢 يعمل الآن: " + currentName;
 
-                            // إزالة التحديد من الكل وإضافته للزرار ده
                             document.querySelectorAll('.aplr-link').forEach(el => el.classList.remove('playing-item'));
                             btn.classList.add('playing-item');
                         }
